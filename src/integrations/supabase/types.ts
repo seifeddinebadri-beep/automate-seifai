@@ -180,6 +180,39 @@ export type Database = {
         }
         Relationships: []
       }
+      document_analyses: {
+        Row: {
+          content_summary: string | null
+          created_at: string
+          file_name: string
+          file_type: string
+          id: string
+          updated_at: string
+          use_cases: Json | null
+          video_url: string | null
+        }
+        Insert: {
+          content_summary?: string | null
+          created_at?: string
+          file_name: string
+          file_type: string
+          id?: string
+          updated_at?: string
+          use_cases?: Json | null
+          video_url?: string | null
+        }
+        Update: {
+          content_summary?: string | null
+          created_at?: string
+          file_name?: string
+          file_type?: string
+          id?: string
+          updated_at?: string
+          use_cases?: Json | null
+          video_url?: string | null
+        }
+        Relationships: []
+      }
       process_events: {
         Row: {
           activity: string
