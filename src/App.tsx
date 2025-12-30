@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import UploadPage from "./pages/UploadPage";
 import ProcessOverview from "./pages/ProcessOverview";
+import ProcessFlowVisualization from "./pages/ProcessFlowVisualization";
 import UseCasesCatalog from "./pages/UseCasesCatalog";
 import UseCaseDetail from "./pages/UseCaseDetail";
 import ROIDashboard from "./pages/ROIDashboard";
@@ -23,6 +24,7 @@ const App = () => (
           <Route path="/" element={<Dashboard />} />
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/process" element={<ProcessOverview />} />
+          <Route path="/process-flow" element={<ProcessFlowVisualization />} />
           <Route path="/use-cases" element={<UseCasesCatalog />} />
           <Route path="/use-cases/:id" element={<UseCaseDetail />} />
           <Route path="/roi" element={<ROIDashboard />} />

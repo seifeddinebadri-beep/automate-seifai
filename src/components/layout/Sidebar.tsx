@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Upload,
   Activity,
+  GitBranch,
   Lightbulb,
   TrendingUp,
   Zap,
@@ -13,6 +14,7 @@ const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Upload Data", href: "/upload", icon: Upload },
   { name: "Process Overview", href: "/process", icon: Activity },
+  { name: "Process Flow", href: "/process-flow", icon: GitBranch },
   { name: "Automation Use Cases", href: "/use-cases", icon: Lightbulb },
   { name: "ROI & Prioritization", href: "/roi", icon: TrendingUp },
 ];
