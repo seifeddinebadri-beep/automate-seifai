@@ -25,20 +25,8 @@ import AutomatedNode from '@/components/flow/AutomatedNode';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 
-interface ProcessEvent {
-  case_id: string;
-  activity: string;
-  timestamp: string;
-}
-
-interface ActivityMetric {
-  activity: string;
-  frequency: number;
-  avg_duration: number | null;
-  rework_count: number | null;
-}
-
 interface AutomationUseCase {
+  id: string;
   name: string;
   type: string;
   affected_activities: string[];
@@ -62,9 +50,8 @@ const ProcessFlowVisualization = () => {
   const [activeView, setActiveView] = useState<'as-is' | 'to-be'>('as-is');
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selectedDataset, setSelectedDataset] = useState<string>('');
-  const [processEvents, setProcessEvents] = useState<ProcessEvent[]>([]);
-  const [metrics, setMetrics] = useState<ActivityMetric[]>([]);
   const [useCases, setUseCases] = useState<AutomationUseCase[]>([]);
+  const [selectedUseCase, setSelectedUseCase] = useState<string>('all');
   const [loading, setLoading] = useState(true);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -88,238 +75,140 @@ const ProcessFlowVisualization = () => {
     fetchDatasets();
   }, []);
 
-  // Fetch data for selected dataset
+  // Fetch use cases for selected dataset
   useEffect(() => {
     if (!selectedDataset) return;
 
-    const fetchData = async () => {
+    const fetchUseCases = async () => {
       setLoading(true);
 
-      // Fetch process events for this dataset
-      const { data: eventsData } = await supabase
-        .from('process_events')
-        .select('case_id, activity, timestamp')
-        .eq('dataset_id', selectedDataset)
-        .order('timestamp', { ascending: true });
-
-      // Fetch activity metrics for this dataset
-      const { data: metricsData } = await supabase
-        .from('activity_metrics')
-        .select('activity, frequency, avg_duration, rework_count')
-        .eq('dataset_id', selectedDataset);
-
-      // Fetch automation use cases for this dataset
       const { data: useCasesData } = await supabase
         .from('automation_use_cases')
-        .select('name, type, affected_activities, estimated_time_saved, confidence_score')
+        .select('id, name, type, affected_activities, estimated_time_saved, confidence_score')
         .eq('dataset_id', selectedDataset);
 
-      if (eventsData) setProcessEvents(eventsData);
-      if (metricsData) setMetrics(metricsData);
-      if (useCasesData) setUseCases(useCasesData);
+      if (useCasesData) {
+        setUseCases(useCasesData);
+        setSelectedUseCase('all');
+      }
 
       setLoading(false);
     };
 
-    fetchData();
+    fetchUseCases();
   }, [selectedDataset]);
 
-  // Derive process flow order from actual events
-  const processOrder = useMemo(() => {
-    if (processEvents.length === 0) return [];
+  // Get the activities to display based on selected use case
+  const processActivities = useMemo(() => {
+    if (useCases.length === 0) return [];
 
-    // Group events by case_id
-    const caseActivities = new Map<string, string[]>();
-    processEvents.forEach(event => {
-      if (!caseActivities.has(event.case_id)) {
-        caseActivities.set(event.case_id, []);
-      }
-      caseActivities.get(event.case_id)!.push(event.activity);
-    });
-
-    // Build transition frequency map to determine most common flow
-    const transitions = new Map<string, Map<string, number>>();
-    const firstActivities = new Map<string, number>();
-
-    caseActivities.forEach(activities => {
-      // Count first activity occurrences
-      if (activities.length > 0) {
-        const first = activities[0];
-        firstActivities.set(first, (firstActivities.get(first) || 0) + 1);
-      }
-
-      // Count transitions
-      for (let i = 0; i < activities.length - 1; i++) {
-        const from = activities[i];
-        const to = activities[i + 1];
-        
-        if (!transitions.has(from)) {
-          transitions.set(from, new Map());
-        }
-        const fromMap = transitions.get(from)!;
-        fromMap.set(to, (fromMap.get(to) || 0) + 1);
-      }
-    });
-
-    // Find most common starting activity
-    let startActivity = '';
-    let maxStartCount = 0;
-    firstActivities.forEach((count, activity) => {
-      if (count > maxStartCount) {
-        maxStartCount = count;
-        startActivity = activity;
-      }
-    });
-
-    // Build ordered flow following most common transitions
-    const orderedActivities: string[] = [];
-    const visited = new Set<string>();
-    let current = startActivity;
-
-    while (current && !visited.has(current)) {
-      orderedActivities.push(current);
-      visited.add(current);
-
-      // Find most common next activity
-      const nextMap = transitions.get(current);
-      if (!nextMap || nextMap.size === 0) break;
-
-      let nextActivity = '';
-      let maxCount = 0;
-      nextMap.forEach((count, activity) => {
-        if (count > maxCount && !visited.has(activity)) {
-          maxCount = count;
-          nextActivity = activity;
-        }
+    if (selectedUseCase === 'all') {
+      // Show all unique activities from all use cases
+      const allActivities: string[] = [];
+      useCases.forEach(uc => {
+        uc.affected_activities.forEach(activity => {
+          if (!allActivities.includes(activity)) {
+            allActivities.push(activity);
+          }
+        });
       });
-
-      current = nextActivity;
+      return allActivities;
+    } else {
+      // Show activities from selected use case
+      const useCase = useCases.find(uc => uc.id === selectedUseCase);
+      return useCase?.affected_activities || [];
     }
-
-    // Add any remaining activities not in the main flow
-    const allActivities = new Set(processEvents.map(e => e.activity));
-    allActivities.forEach(activity => {
-      if (!visited.has(activity)) {
-        orderedActivities.push(activity);
-      }
-    });
-
-    return orderedActivities;
-  }, [processEvents]);
-
-  const automatedActivities = useMemo(() => {
-    const activities = new Set<string>();
-    useCases.forEach(uc => {
-      uc.affected_activities.forEach(a => activities.add(a));
-    });
-    return activities;
-  }, [useCases]);
+  }, [useCases, selectedUseCase]);
 
   const getAutomationType = (activity: string): string | null => {
     const useCase = useCases.find(uc => uc.affected_activities.includes(activity));
     return useCase?.type || null;
   };
 
-  const getTimeSaved = (activity: string): number => {
+  const getTimeSavedForActivity = (activity: string): number => {
+    // Distribute time saved across affected activities
     const useCase = useCases.find(uc => uc.affected_activities.includes(activity));
-    return useCase?.estimated_time_saved || 0;
+    if (!useCase) return 0;
+    return Math.round(useCase.estimated_time_saved / useCase.affected_activities.length);
   };
 
-  const getMetricForActivity = (activity: string): ActivityMetric | undefined => {
-    return metrics.find(m => m.activity === activity);
+  const getUseCaseName = (activity: string): string | null => {
+    const useCase = useCases.find(uc => uc.affected_activities.includes(activity));
+    return useCase?.name || null;
   };
 
-  // Build flow visualization from derived process order
+  // Build flow visualization from activities
   useEffect(() => {
-    if (processOrder.length === 0) return;
+    if (processActivities.length === 0) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
 
-    const newNodes: Node[] = processOrder.map((activity, index) => {
-      const metric = getMetricForActivity(activity);
-      const isAutomated = automatedActivities.has(activity);
+    const newNodes: Node[] = processActivities.map((activity, index) => {
       const automationType = getAutomationType(activity);
-      const timeSaved = getTimeSaved(activity);
-      const originalDuration = metric?.avg_duration || 0;
-      const newDuration = activeView === 'to-be' && isAutomated 
-        ? Math.max(originalDuration - timeSaved, originalDuration * 0.1)
-        : originalDuration;
+      const timeSaved = getTimeSavedForActivity(activity);
+      const baseDuration = 60; // Default 1 minute per activity for estimation
+      const newDuration = activeView === 'to-be' ? Math.max(baseDuration - timeSaved, 5) : baseDuration;
 
       // Calculate position - arrange in a flowing layout
-      const row = Math.floor(index / 4);
-      const col = index % 4;
-      const xOffset = row % 2 === 0 ? col : 3 - col; // Alternate direction for readability
+      const row = Math.floor(index / 3);
+      const col = index % 3;
+      const xOffset = row % 2 === 0 ? col : 2 - col; // Alternate direction for readability
 
       return {
         id: `node-${index}`,
-        type: activeView === 'to-be' && isAutomated ? 'automated' : 'activity',
-        position: { x: xOffset * 250 + 50, y: row * 180 + 50 },
+        type: activeView === 'to-be' ? 'automated' : 'activity',
+        position: { x: xOffset * 280 + 50, y: row * 180 + 50 },
         data: {
-          label: activity,
-          frequency: metric?.frequency || processEvents.filter(e => e.activity === activity).length,
-          duration: activeView === 'to-be' && isAutomated ? newDuration : originalDuration,
-          originalDuration: originalDuration,
-          rework: metric?.rework_count || 0,
-          isAutomated: activeView === 'to-be' && isAutomated,
+          label: activity.length > 50 ? activity.substring(0, 47) + '...' : activity,
+          fullLabel: activity,
+          frequency: 1,
+          duration: activeView === 'to-be' ? newDuration : baseDuration,
+          originalDuration: baseDuration,
+          rework: 0,
+          isAutomated: activeView === 'to-be',
           automationType: automationType,
           timeSaved: timeSaved,
-          showSavings: activeView === 'to-be' && isAutomated,
+          showSavings: activeView === 'to-be',
         },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
       };
     });
 
-    // Create edges following the process order
-    const newEdges: Edge[] = processOrder.slice(0, -1).map((_, index) => {
-      const row = Math.floor(index / 4);
-      const nextRow = Math.floor((index + 1) / 4);
-      const isRowChange = row !== nextRow;
-
-      return {
-        id: `edge-${index}`,
-        source: `node-${index}`,
-        target: `node-${index + 1}`,
-        type: 'smoothstep',
-        animated: activeView === 'to-be',
-        style: { 
-          strokeWidth: 2, 
-          stroke: activeView === 'to-be' ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))' 
-        },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: activeView === 'to-be' ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))',
-        },
-      };
-    });
+    // Create edges following the activity order
+    const newEdges: Edge[] = processActivities.slice(0, -1).map((_, index) => ({
+      id: `edge-${index}`,
+      source: `node-${index}`,
+      target: `node-${index + 1}`,
+      type: 'smoothstep',
+      animated: activeView === 'to-be',
+      style: { 
+        strokeWidth: 2, 
+        stroke: activeView === 'to-be' ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))' 
+      },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: activeView === 'to-be' ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))',
+      },
+    }));
 
     setNodes(newNodes);
     setEdges(newEdges);
-  }, [processOrder, metrics, useCases, activeView, automatedActivities, processEvents]);
+  }, [processActivities, useCases, activeView]);
 
-  const totalCurrentDuration = useMemo(() => {
-    return processOrder.reduce((sum, activity) => {
-      const metric = getMetricForActivity(activity);
-      return sum + (metric?.avg_duration || 0);
-    }, 0);
-  }, [processOrder, metrics]);
+  const totalTimeSaved = useMemo(() => {
+    if (selectedUseCase === 'all') {
+      return useCases.reduce((sum, uc) => sum + uc.estimated_time_saved, 0);
+    }
+    const useCase = useCases.find(uc => uc.id === selectedUseCase);
+    return useCase?.estimated_time_saved || 0;
+  }, [useCases, selectedUseCase]);
 
-  const totalAutomatedDuration = useMemo(() => {
-    return processOrder.reduce((sum, activity) => {
-      const metric = getMetricForActivity(activity);
-      const isAutomated = automatedActivities.has(activity);
-      const timeSaved = getTimeSaved(activity);
-      const original = metric?.avg_duration || 0;
-      return sum + (isAutomated ? Math.max(original - timeSaved, original * 0.1) : original);
-    }, 0);
-  }, [processOrder, metrics, automatedActivities, useCases]);
-
-  const timeSavedPercentage = totalCurrentDuration > 0 
-    ? Math.round(((totalCurrentDuration - totalAutomatedDuration) / totalCurrentDuration) * 100)
-    : 0;
-
-  const formatDuration = (seconds: number): string => {
-    if (seconds < 60) return `${Math.round(seconds)}s`;
-    if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-    return `${(seconds / 3600).toFixed(1)}h`;
+  const formatDuration = (minutes: number): string => {
+    if (minutes < 60) return `${Math.round(minutes)}m`;
+    return `${(minutes / 60).toFixed(1)}h`;
   };
 
   if (loading && datasets.length === 0) {
@@ -384,6 +273,20 @@ const ProcessFlowVisualization = () => {
               </SelectContent>
             </Select>
 
+            <Select value={selectedUseCase} onValueChange={setSelectedUseCase}>
+              <SelectTrigger className="w-[250px]">
+                <SelectValue placeholder="Select use case" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Use Cases ({useCases.length})</SelectItem>
+                {useCases.map(uc => (
+                  <SelectItem key={uc.id} value={uc.id}>
+                    {uc.name.length > 35 ? uc.name.substring(0, 32) + '...' : uc.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <Tabs value={activeView} onValueChange={(v) => setActiveView(v as 'as-is' | 'to-be')}>
               <TabsList className="grid grid-cols-2 w-[280px]">
                 <TabsTrigger value="as-is" className="flex items-center gap-2">
@@ -405,25 +308,25 @@ const ProcessFlowVisualization = () => {
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-muted rounded-lg">
-                  <Clock className="h-5 w-5 text-muted-foreground" />
+                  <Zap className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Current Duration</p>
-                  <p className="text-2xl font-bold">{formatDuration(totalCurrentDuration)}</p>
+                  <p className="text-sm text-muted-foreground">Use Cases</p>
+                  <p className="text-2xl font-bold">{selectedUseCase === 'all' ? useCases.length : 1}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className={activeView === 'to-be' ? 'border-primary/50 bg-primary/5' : ''}>
+          <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${activeView === 'to-be' ? 'bg-primary/20' : 'bg-muted'}`}>
-                  <Zap className={`h-5 w-5 ${activeView === 'to-be' ? 'text-primary' : 'text-muted-foreground'}`} />
+                <div className="p-2 bg-muted rounded-lg">
+                  <Clock className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Automated Duration</p>
-                  <p className="text-2xl font-bold">{formatDuration(totalAutomatedDuration)}</p>
+                  <p className="text-sm text-muted-foreground">Activities</p>
+                  <p className="text-2xl font-bold">{processActivities.length}</p>
                 </div>
               </div>
             </CardContent>
@@ -437,7 +340,7 @@ const ProcessFlowVisualization = () => {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Time Saved</p>
-                  <p className="text-2xl font-bold text-green-600">{timeSavedPercentage}%</p>
+                  <p className="text-2xl font-bold text-green-600">{formatDuration(totalTimeSaved)}</p>
                 </div>
               </div>
             </CardContent>
@@ -450,8 +353,12 @@ const ProcessFlowVisualization = () => {
                   <Bot className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Automated Activities</p>
-                  <p className="text-2xl font-bold">{automatedActivities.size} / {processOrder.length}</p>
+                  <p className="text-sm text-muted-foreground">Automation Type</p>
+                  <p className="text-2xl font-bold">
+                    {selectedUseCase === 'all' 
+                      ? 'Mixed' 
+                      : useCases.find(uc => uc.id === selectedUseCase)?.type || '-'}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -473,16 +380,16 @@ const ProcessFlowVisualization = () => {
                   Future Process (Automated)
                 </>
               )}
-              {processOrder.length > 0 && (
+              {processActivities.length > 0 && (
                 <Badge variant="secondary" className="ml-2">
-                  {processOrder.length} activities
+                  {processActivities.length} activities
                 </Badge>
               )}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="h-[500px] w-full">
-              {processOrder.length > 0 ? (
+              {processActivities.length > 0 ? (
                 <ReactFlow
                   nodes={nodes}
                   edges={edges}
@@ -497,12 +404,18 @@ const ProcessFlowVisualization = () => {
                   <Controls />
                 </ReactFlow>
               ) : (
-                <div className="h-full flex items-center justify-center text-muted-foreground">
-                  <div className="text-center">
-                    <FileUp className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No process events found for this dataset</p>
-                    <p className="text-sm">Upload process data to visualize the flow</p>
-                  </div>
+                <div className="h-full flex items-center justify-center">
+                  <EmptyState
+                    icon={<FileUp className="h-6 w-6" />}
+                    title="No Use Cases Found"
+                    description="Upload documents to analyze and generate automation use cases for visualization."
+                    action={
+                      <Button onClick={() => navigate('/upload')}>
+                        <FileUp className="mr-2 h-4 w-4" />
+                        Upload Documents
+                      </Button>
+                    }
+                  />
                 </div>
               )}
             </div>
@@ -511,31 +424,26 @@ const ProcessFlowVisualization = () => {
 
         {/* Legend */}
         <Card>
-          <CardContent className="pt-6">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Legend</CardTitle>
+          </CardHeader>
+          <CardContent>
             <div className="flex flex-wrap gap-6">
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-card border-2 border-muted-foreground" />
+                <div className="w-4 h-4 bg-card border-2 border-muted-foreground rounded" />
                 <span className="text-sm">Manual Activity</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-primary/20 border-2 border-primary" />
+                <div className="w-4 h-4 bg-primary/10 border-2 border-primary rounded" />
                 <span className="text-sm">Automated Activity</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-xs">RPA</Badge>
-                <span className="text-sm">Robotic Process Automation</span>
+                <div className="w-8 h-0.5 bg-muted-foreground" />
+                <span className="text-sm">Process Flow</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-xs">Workflow</Badge>
-                <span className="text-sm">Workflow Automation</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-xs">Rule</Badge>
-                <span className="text-sm">Business Rules Engine</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-xs">AI Agent</Badge>
-                <span className="text-sm">AI-Powered Automation</span>
+                <div className="w-8 h-0.5 bg-primary animate-pulse" />
+                <span className="text-sm">Automated Flow</span>
               </div>
             </div>
           </CardContent>
