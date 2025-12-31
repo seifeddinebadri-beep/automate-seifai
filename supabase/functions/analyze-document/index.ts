@@ -123,6 +123,36 @@ Return your analysis as valid JSON with this structure:
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Get or create a default dataset for document-based use cases
+    let datasetId: string;
+    const { data: existingDataset } = await supabase
+      .from("datasets")
+      .select("id")
+      .eq("name", "Document Analysis")
+      .single();
+
+    if (existingDataset) {
+      datasetId = existingDataset.id;
+    } else {
+      const { data: newDataset, error: datasetError } = await supabase
+        .from("datasets")
+        .insert({
+          name: "Document Analysis",
+          file_name: "document-uploads",
+          description: "Use cases extracted from uploaded documents",
+          status: "completed",
+          row_count: 0,
+        })
+        .select()
+        .single();
+
+      if (datasetError) {
+        console.error("Dataset creation error:", datasetError);
+        throw datasetError;
+      }
+      datasetId = newDataset.id;
+    }
+
     const { data: docAnalysis, error: insertError } = await supabase
       .from("document_analyses")
       .insert({
@@ -140,6 +170,45 @@ Return your analysis as valid JSON with this structure:
     }
 
     console.log(`Document analysis saved with ID: ${docAnalysis.id}`);
+
+    // Insert use cases into automation_use_cases table
+    if (analysisResult.use_cases && analysisResult.use_cases.length > 0) {
+      const useCasesToInsert = analysisResult.use_cases.map((uc: any) => {
+        // Map AI type to database type
+        let dbType = "Workflow";
+        if (uc.type?.toLowerCase().includes("rpa")) dbType = "RPA";
+        else if (uc.type?.toLowerCase().includes("rule")) dbType = "Rule";
+        else if (uc.type?.toLowerCase().includes("ai") || uc.type?.toLowerCase().includes("agent")) dbType = "AI Agent";
+
+        return {
+          dataset_id: datasetId,
+          name: uc.name || "Unnamed Use Case",
+          description: uc.description || uc.reasoning || "",
+          type: dbType,
+          complexity: uc.complexity || "Medium",
+          confidence_score: uc.confidence || 0.7,
+          affected_activities: uc.affected_activities || [],
+          suggested_approach: uc.suggested_approach || "",
+          pattern_type: "Document Analysis",
+          monthly_volume: 100, // Default estimate
+          estimated_time_saved: uc.estimated_time_saved_minutes || 30,
+          estimated_cost_impact: (uc.estimated_time_saved_minutes || 30) * 100 * 0.5, // Rough cost calculation
+          priority_score: Math.round((uc.confidence || 0.7) * 100),
+          status: "new",
+        };
+      });
+
+      const { error: useCaseError } = await supabase
+        .from("automation_use_cases")
+        .insert(useCasesToInsert);
+
+      if (useCaseError) {
+        console.error("Use case insert error:", useCaseError);
+        // Don't throw - document was saved, just log the error
+      } else {
+        console.log(`Inserted ${useCasesToInsert.length} use cases`);
+      }
+    }
 
     return new Response(
       JSON.stringify({ 
