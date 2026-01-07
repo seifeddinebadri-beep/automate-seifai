@@ -172,6 +172,7 @@ Return your analysis as valid JSON with this structure:
     console.log(`Document analysis saved with ID: ${docAnalysis.id}`);
 
     // Insert use cases into automation_use_cases table
+    let insertedUseCases: any[] = [];
     if (analysisResult.use_cases && analysisResult.use_cases.length > 0) {
       const useCasesToInsert = analysisResult.use_cases.map((uc: any) => {
         // Map AI type to database type
@@ -195,18 +196,21 @@ Return your analysis as valid JSON with this structure:
           estimated_cost_impact: (uc.estimated_time_saved_minutes || 30) * 100 * 0.5, // Rough cost calculation
           priority_score: Math.round((uc.confidence || 0.7) * 100),
           status: "new",
+          source: fileName, // Track source file
         };
       });
 
-      const { error: useCaseError } = await supabase
+      const { data: useCasesData, error: useCaseError } = await supabase
         .from("automation_use_cases")
-        .insert(useCasesToInsert);
+        .insert(useCasesToInsert)
+        .select("id, name, type, complexity, confidence_score, estimated_time_saved");
 
       if (useCaseError) {
         console.error("Use case insert error:", useCaseError);
         // Don't throw - document was saved, just log the error
       } else {
         console.log(`Inserted ${useCasesToInsert.length} use cases`);
+        insertedUseCases = useCasesData || [];
       }
     }
 
@@ -214,7 +218,8 @@ Return your analysis as valid JSON with this structure:
       JSON.stringify({ 
         success: true, 
         analysis: docAnalysis,
-        useCasesCount: analysisResult.use_cases?.length || 0
+        useCasesCount: analysisResult.use_cases?.length || 0,
+        useCases: insertedUseCases, // Return inserted use cases with IDs
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
