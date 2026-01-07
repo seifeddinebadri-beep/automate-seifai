@@ -16,6 +16,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  UseCaseFilters,
+  filterUseCases,
+  type UseCaseType,
+  type Complexity,
+} from "@/components/filters/UseCaseFilters";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Database,
@@ -36,11 +42,13 @@ interface DashboardStats {
 interface TopUseCase {
   id: string;
   name: string;
-  type: "RPA" | "Workflow" | "Rule" | "AI Agent";
-  complexity: "Low" | "Medium" | "High";
+  description: string | null;
+  type: UseCaseType;
+  complexity: Complexity;
   confidence_score: number;
   estimated_cost_impact: number;
   priority_score: number;
+  source: string | null;
 }
 
 export default function Dashboard() {
@@ -53,6 +61,11 @@ export default function Dashboard() {
   const [topUseCases, setTopUseCases] = useState<TopUseCase[]>([]);
   const [hasData, setHasData] = useState(false);
   const [loading, setLoading] = useState(true);
+  
+  // Filter states
+  const [searchTerm, setSearchTerm] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [complexityFilter, setComplexityFilter] = useState<string>("all");
 
   useEffect(() => {
     async function fetchDashboardData() {
@@ -101,14 +114,13 @@ export default function Dashboard() {
           estimatedSavings: totalSavings,
         });
 
-        // Fetch top 5 use cases by priority
+        // Fetch all use cases (we'll filter on client)
         const { data: topCases } = await supabase
           .from("automation_use_cases")
           .select(
-            "id, name, type, complexity, confidence_score, estimated_cost_impact, priority_score"
+            "id, name, description, type, complexity, confidence_score, estimated_cost_impact, priority_score, source"
           )
-          .order("priority_score", { ascending: false })
-          .limit(5);
+          .order("priority_score", { ascending: false });
 
         setTopUseCases((topCases as TopUseCase[]) || []);
       } catch (error) {
@@ -179,7 +191,7 @@ export default function Dashboard() {
 
         {/* Top Automation Opportunities */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-4">
             <CardTitle className="text-lg font-semibold">
               Top Automation Opportunities
             </CardTitle>
@@ -187,45 +199,72 @@ export default function Dashboard() {
               <Link to="/use-cases">View All</Link>
             </Button>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {topUseCases.length > 0 && (
+              <UseCaseFilters
+                searchTerm={searchTerm}
+                onSearchChange={setSearchTerm}
+                typeFilter={typeFilter}
+                onTypeChange={setTypeFilter}
+                complexityFilter={complexityFilter}
+                onComplexityChange={setComplexityFilter}
+                compact
+              />
+            )}
             {topUseCases.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Use Case</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Complexity</TableHead>
-                    <TableHead>Confidence</TableHead>
-                    <TableHead className="text-right">Est. Savings/mo</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {topUseCases.map((useCase) => (
-                    <TableRow key={useCase.id}>
-                      <TableCell className="font-medium">
-                        <Link
-                          to={`/use-cases/${useCase.id}`}
-                          className="hover:text-primary hover:underline"
-                        >
-                          {useCase.name}
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <TypeBadge type={useCase.type} />
-                      </TableCell>
-                      <TableCell>
-                        <ComplexityBadge complexity={useCase.complexity} />
-                      </TableCell>
-                      <TableCell>
-                        <ConfidenceIndicator score={useCase.confidence_score} />
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        ${Number(useCase.estimated_cost_impact).toLocaleString()}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <>
+                {(() => {
+                  const filtered = filterUseCases(topUseCases, {
+                    searchTerm,
+                    typeFilter,
+                    complexityFilter,
+                  }).slice(0, 5);
+                  
+                  return filtered.length > 0 ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Use Case</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Complexity</TableHead>
+                          <TableHead>Confidence</TableHead>
+                          <TableHead className="text-right">Est. Savings/mo</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filtered.map((useCase) => (
+                          <TableRow key={useCase.id}>
+                            <TableCell className="font-medium">
+                              <Link
+                                to={`/use-cases/${useCase.id}`}
+                                className="hover:text-primary hover:underline"
+                              >
+                                {useCase.name}
+                              </Link>
+                            </TableCell>
+                            <TableCell>
+                              <TypeBadge type={useCase.type} />
+                            </TableCell>
+                            <TableCell>
+                              <ComplexityBadge complexity={useCase.complexity} />
+                            </TableCell>
+                            <TableCell>
+                              <ConfidenceIndicator score={useCase.confidence_score} />
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
+                              ${Number(useCase.estimated_cost_impact).toLocaleString()}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="py-8 text-center text-muted-foreground">
+                      No use cases match your filters
+                    </div>
+                  );
+                })()}
+              </>
             ) : (
               <div className="py-8 text-center text-muted-foreground">
                 <Lightbulb className="mx-auto mb-2 h-8 w-8" />

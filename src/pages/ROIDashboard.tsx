@@ -17,6 +17,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  UseCaseFilters,
+  filterUseCases,
+  type UseCaseType,
+  type Complexity,
+} from "@/components/filters/UseCaseFilters";
 import { supabase } from "@/integrations/supabase/client";
 import {
   BarChart,
@@ -33,28 +39,26 @@ import {
 } from "recharts";
 import {
   Calculator,
-  Upload,
   DollarSign,
   TrendingUp,
   Clock,
   Settings,
 } from "lucide-react";
 
-type UseCaseType = "RPA" | "Workflow" | "Rule" | "AI Agent";
-type Complexity = "Low" | "Medium" | "High";
-
 interface UseCase {
   id: string;
   name: string;
+  description: string | null;
   type: UseCaseType;
   complexity: Complexity;
   monthly_volume: number;
   estimated_time_saved: number;
   estimated_cost_impact: number;
   priority_score: number;
+  source: string | null;
 }
 
-interface Settings {
+interface SettingsState {
   costPerHour: number;
   complexityWeights: Record<string, number>;
 }
@@ -69,11 +73,16 @@ const COLORS = [
 export default function ROIDashboard() {
   const [useCases, setUseCases] = useState<UseCase[]>([]);
   const [loading, setLoading] = useState(true);
-  const [settings, setSettings] = useState<Settings>({
+  const [settings, setSettings] = useState<SettingsState>({
     costPerHour: 50,
     complexityWeights: { Low: 1, Medium: 2, High: 3 },
   });
   const [showSettings, setShowSettings] = useState(false);
+  
+  // Filter states
+  const [searchTerm, setSearchTerm] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [complexityFilter, setComplexityFilter] = useState<string>("all");
 
   useEffect(() => {
     fetchData();
@@ -109,7 +118,7 @@ export default function ROIDashboard() {
       const { data: useCasesData } = await supabase
         .from("automation_use_cases")
         .select(
-          "id, name, type, complexity, monthly_volume, estimated_time_saved, estimated_cost_impact, priority_score"
+          "id, name, description, type, complexity, monthly_volume, estimated_time_saved, estimated_cost_impact, priority_score, source"
         )
         .order("priority_score", { ascending: false });
 
@@ -121,8 +130,15 @@ export default function ROIDashboard() {
     }
   }
 
+  // Filter use cases first
+  const filteredUseCases = filterUseCases(useCases, {
+    searchTerm,
+    typeFilter,
+    complexityFilter,
+  });
+
   // Recalculate priority scores with current settings
-  const recalculatedUseCases = useCases.map((uc) => {
+  const recalculatedUseCases = filteredUseCases.map((uc) => {
     const hoursSaved = uc.estimated_time_saved / 60;
     const costImpact = hoursSaved * settings.costPerHour;
     const complexityWeight = settings.complexityWeights[uc.complexity] || 1;
@@ -183,6 +199,8 @@ export default function ROIDashboard() {
     );
   }
 
+  const hasFilteredResults = recalculatedUseCases.length > 0;
+
   // Prepare chart data
   const totalSavings = recalculatedUseCases.reduce(
     (sum, uc) => sum + uc.adjusted_cost_impact,
@@ -221,73 +239,88 @@ export default function ROIDashboard() {
   return (
     <AppLayout>
       <div className="space-y-6 animate-fade-in">
+        {/* Filters */}
+        <Card>
+          <CardContent className="pt-6">
+            <UseCaseFilters
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              typeFilter={typeFilter}
+              onTypeChange={setTypeFilter}
+              complexityFilter={complexityFilter}
+              onComplexityChange={setComplexityFilter}
+            />
+          </CardContent>
+        </Card>
         {/* Summary Cards */}
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card className="bg-gradient-to-br from-primary/5 to-primary/10">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                  <DollarSign className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <p className="text-3xl font-bold text-primary">
-                    ${Math.round(totalSavings).toLocaleString()}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Total Monthly Savings
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-chart-2/10">
-                  <Clock className="h-6 w-6 text-chart-2" />
-                </div>
-                <div>
-                  <p className="text-3xl font-bold">
-                    {Math.round(totalHoursSaved).toLocaleString()}h
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Hours Saved/Month
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
-                  <TrendingUp className="h-6 w-6 text-success" />
-                </div>
-                <div>
-                  <p className="text-3xl font-bold">{recalculatedUseCases.length}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Automation Opportunities
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="cursor-pointer hover:shadow-card-hover" onClick={() => setShowSettings(!showSettings)}>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                  <Settings className="h-6 w-6 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-lg font-semibold">${settings.costPerHour}/hr</p>
-                  <p className="text-sm text-muted-foreground">
-                    Click to adjust assumptions
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {hasFilteredResults ? (
+          <>
+            <div className="grid gap-4 md:grid-cols-4">
+              <Card className="bg-gradient-to-br from-primary/5 to-primary/10">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                      <DollarSign className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-3xl font-bold text-primary">
+                        ${Math.round(totalSavings).toLocaleString()}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Total Monthly Savings
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-chart-2/10">
+                      <Clock className="h-6 w-6 text-chart-2" />
+                    </div>
+                    <div>
+                      <p className="text-3xl font-bold">
+                        {Math.round(totalHoursSaved).toLocaleString()}h
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Hours Saved/Month
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
+                      <TrendingUp className="h-6 w-6 text-success" />
+                    </div>
+                    <div>
+                      <p className="text-3xl font-bold">{recalculatedUseCases.length}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Automation Opportunities
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="cursor-pointer hover:shadow-card-hover" onClick={() => setShowSettings(!showSettings)}>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                      <Settings className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-lg font-semibold">${settings.costPerHour}/hr</p>
+                      <p className="text-sm text-muted-foreground">
+                        Click to adjust assumptions
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
         {/* Settings Panel */}
         {showSettings && (
@@ -517,6 +550,14 @@ export default function ROIDashboard() {
             </div>
           </CardContent>
         </Card>
+          </>
+        ) : (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              No use cases match your filters
+            </CardContent>
+          </Card>
+        )}
       </div>
     </AppLayout>
   );
