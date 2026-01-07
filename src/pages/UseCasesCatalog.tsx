@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TypeBadge } from "@/components/ui/type-badge";
 import { ComplexityBadge } from "@/components/ui/complexity-badge";
@@ -17,24 +16,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  UseCaseFilters,
+  filterUseCases,
+  extractUniqueSources,
+  type UseCaseType,
+  type Complexity,
+} from "@/components/filters/UseCaseFilters";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Lightbulb,
-  Search,
   ArrowUpDown,
-  Upload,
   ExternalLink,
   FileText,
 } from "lucide-react";
-
-type UseCaseType = "RPA" | "Workflow" | "Rule" | "AI Agent";
-type Complexity = "Low" | "Medium" | "High";
 
 interface UseCase {
   id: string;
@@ -62,6 +56,7 @@ export default function UseCasesCatalog() {
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [complexityFilter, setComplexityFilter] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField>("priority_score");
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -84,21 +79,18 @@ export default function UseCasesCatalog() {
     }
   }
 
-  const filteredUseCases = useCases
-    .filter((uc) => {
-      const matchesSearch =
-        uc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        uc.description?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesType = typeFilter === "all" || uc.type === typeFilter;
-      const matchesComplexity =
-        complexityFilter === "all" || uc.complexity === complexityFilter;
-      return matchesSearch && matchesType && matchesComplexity;
-    })
-    .sort((a, b) => {
-      const aVal = a[sortField] || 0;
-      const bVal = b[sortField] || 0;
-      return sortAsc ? Number(aVal) - Number(bVal) : Number(bVal) - Number(aVal);
-    });
+  const sources = extractUniqueSources(useCases);
+
+  const filteredUseCases = filterUseCases(useCases, {
+    searchTerm,
+    typeFilter,
+    complexityFilter,
+    sourceFilter,
+  }).sort((a, b) => {
+    const aVal = a[sortField] || 0;
+    const bVal = b[sortField] || 0;
+    return sortAsc ? Number(aVal) - Number(bVal) : Number(bVal) - Number(aVal);
+  });
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -198,40 +190,18 @@ export default function UseCasesCatalog() {
         {/* Filters */}
         <Card>
           <CardContent className="pt-6">
-            <div className="flex flex-wrap gap-4">
-              <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search use cases..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="RPA">RPA</SelectItem>
-                  <SelectItem value="Workflow">Workflow</SelectItem>
-                  <SelectItem value="Rule">Rule</SelectItem>
-                  <SelectItem value="AI Agent">AI Agent</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={complexityFilter} onValueChange={setComplexityFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Complexity" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Complexity</SelectItem>
-                  <SelectItem value="Low">Low</SelectItem>
-                  <SelectItem value="Medium">Medium</SelectItem>
-                  <SelectItem value="High">High</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <UseCaseFilters
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              typeFilter={typeFilter}
+              onTypeChange={setTypeFilter}
+              complexityFilter={complexityFilter}
+              onComplexityChange={setComplexityFilter}
+              sourceFilter={sourceFilter}
+              onSourceChange={setSourceFilter}
+              sources={sources}
+              showSourceFilter={sources.length > 0}
+            />
           </CardContent>
         </Card>
 
