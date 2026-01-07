@@ -90,6 +90,7 @@ export type Database = {
           name: string
           pattern_type: string
           priority_score: number | null
+          source: string | null
           status: string | null
           suggested_approach: string | null
           type: string
@@ -111,6 +112,7 @@ export type Database = {
           name: string
           pattern_type: string
           priority_score?: number | null
+          source?: string | null
           status?: string | null
           suggested_approach?: string | null
           type: string
@@ -132,6 +134,7 @@ export type Database = {
           name?: string
           pattern_type?: string
           priority_score?: number | null
+          source?: string | null
           status?: string | null
           suggested_approach?: string | null
           type?: string

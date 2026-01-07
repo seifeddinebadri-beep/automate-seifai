@@ -33,6 +33,7 @@ import {
   Loader2,
   Sparkles
 } from "lucide-react";
+import { AnalysisResultsDialog } from "@/components/upload/AnalysisResultsDialog";
 
 interface ParsedData {
   headers: string[];
@@ -47,6 +48,15 @@ interface ColumnMapping {
   user_role?: string;
   system?: string;
   duration?: string;
+}
+
+interface AnalyzedUseCase {
+  id: string;
+  name: string;
+  type: string;
+  complexity: string;
+  confidence_score: number;
+  estimated_time_saved: number;
 }
 
 const requiredFields = ["case_id", "activity", "timestamp"] as const;
@@ -75,6 +85,11 @@ export default function UploadPage() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isUploadingVideo, setIsUploadingVideo] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+
+  // Results dialog state
+  const [showResultsDialog, setShowResultsDialog] = useState(false);
+  const [analyzedUseCases, setAnalyzedUseCases] = useState<AnalyzedUseCase[]>([]);
+  const [analysisSourceFile, setAnalysisSourceFile] = useState("");
 
   const parseCSV = (text: string): ParsedData => {
     const lines = text.trim().split("\n");
@@ -213,17 +228,22 @@ export default function UploadPage() {
       toast.info("Starting process analysis...");
       
       const response = await supabase.functions.invoke("analyze-process", {
-        body: { datasetId: dataset.id },
+        body: { datasetId: dataset.id, sourceFileName: file.name },
       });
 
       if (response.error) {
         console.error("Analysis error:", response.error);
         toast.warning("Data imported, but analysis encountered an issue.");
       } else {
-        toast.success("Analysis complete! Automation opportunities detected.");
+        const useCasesFound = response.data?.useCases || [];
+        if (useCasesFound.length > 0) {
+          setAnalyzedUseCases(useCasesFound);
+          setAnalysisSourceFile(file.name);
+          setShowResultsDialog(true);
+        } else {
+          toast.success("Analysis complete! No automation opportunities detected.");
+        }
       }
-
-      navigate("/process");
     } catch (error) {
       console.error("Error processing data:", error);
       toast.error("Failed to process data. Please try again.");
@@ -323,8 +343,16 @@ export default function UploadPage() {
         return;
       }
 
-      toast.success(`Analysis complete! Found ${response.data.useCasesCount} automation opportunities.`);
-      navigate("/use-cases");
+      const useCasesFound = response.data?.useCases || [];
+      if (useCasesFound.length > 0) {
+        setAnalyzedUseCases(useCasesFound);
+        setAnalysisSourceFile(docFile.name);
+        setShowResultsDialog(true);
+        toast.success(`Analysis complete! Found ${useCasesFound.length} automation opportunities.`);
+      } else {
+        toast.success("Analysis complete! No automation opportunities detected.");
+        navigate("/use-cases");
+      }
     } catch (error) {
       console.error("Error analyzing document:", error);
       toast.error("Failed to analyze document. Please try again.");
@@ -917,6 +945,18 @@ export default function UploadPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Analysis Results Dialog */}
+        <AnalysisResultsDialog
+          open={showResultsDialog}
+          onOpenChange={setShowResultsDialog}
+          useCases={analyzedUseCases}
+          sourceFileName={analysisSourceFile}
+          onViewAll={() => {
+            setShowResultsDialog(false);
+            navigate("/use-cases");
+          }}
+        />
       </div>
     </AppLayout>
   );

@@ -30,6 +30,7 @@ import {
   ArrowUpDown,
   Upload,
   ExternalLink,
+  FileText,
 } from "lucide-react";
 
 type UseCaseType = "RPA" | "Workflow" | "Rule" | "AI Agent";
@@ -50,6 +51,7 @@ interface UseCase {
   ai_classification: string | null;
   status: string;
   created_at: string;
+  source: string | null;
 }
 
 type SortField = "priority_score" | "estimated_cost_impact" | "confidence_score" | "monthly_volume";
@@ -247,6 +249,7 @@ export default function UseCasesCatalog() {
                   <TableRow>
                     <TableHead className="min-w-[200px]">Use Case</TableHead>
                     <TableHead>Type</TableHead>
+                    <TableHead>Source</TableHead>
                     <TableHead>Complexity</TableHead>
                     <TableHead>Confidence</TableHead>
                     <TableHead>
@@ -299,6 +302,18 @@ export default function UseCasesCatalog() {
                       </TableCell>
                       <TableCell>
                         <TypeBadge type={uc.type} />
+                      </TableCell>
+                      <TableCell>
+                        {uc.source ? (
+                          <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <FileText className="h-3 w-3" />
+                            <span className="max-w-[120px] truncate" title={uc.source}>
+                              {uc.source}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <ComplexityBadge complexity={uc.complexity} />

@@ -12,8 +12,8 @@ serve(async (req) => {
   }
 
   try {
-    const { datasetId } = await req.json();
-    console.log("Starting analysis for dataset:", datasetId);
+    const { datasetId, sourceFileName } = await req.json();
+    console.log("Starting analysis for dataset:", datasetId, "source:", sourceFileName);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -110,6 +110,7 @@ serve(async (req) => {
           complexity: m.std_deviation < 10 ? "Low" : "Medium",
           confidence_score: Math.min(0.95, 0.6 + (m.frequency / 1000)),
           priority_score: 0,
+          source: sourceFileName || null,
         });
       }
 
@@ -129,6 +130,7 @@ serve(async (req) => {
           complexity: "Medium",
           confidence_score: Math.min(0.85, 0.5 + (m.rework_count / 100)),
           priority_score: 0,
+          source: sourceFileName || null,
         });
       }
     });
@@ -141,10 +143,16 @@ serve(async (req) => {
       );
     });
 
+    let insertedUseCases: any[] = [];
     if (useCases.length > 0) {
-      const { error: useCaseError } = await supabase.from("automation_use_cases").insert(useCases);
+      const { data: useCasesData, error: useCaseError } = await supabase
+        .from("automation_use_cases")
+        .insert(useCases)
+        .select("id, name, type, complexity, confidence_score, estimated_time_saved");
+      
       if (useCaseError) throw useCaseError;
       console.log(`Created ${useCases.length} use cases`);
+      insertedUseCases = useCasesData || [];
       
       // Trigger AI classification
       try {
@@ -154,7 +162,12 @@ serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ success: true, metrics: metrics.length, useCases: useCases.length }), {
+    return new Response(JSON.stringify({ 
+      success: true, 
+      metrics: metrics.length, 
+      useCasesCount: useCases.length,
+      useCases: insertedUseCases,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: unknown) {
