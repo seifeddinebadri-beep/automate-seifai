@@ -1,0 +1,1 @@
+ALTER TABLE public.datasets ADD COLUMN process_context JSONB DEFAULT NULL;
