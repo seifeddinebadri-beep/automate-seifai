@@ -169,7 +169,7 @@ export default function UploadPage() {
   );
 
   const handleMappingChange = (field: keyof ColumnMapping, value: string) => {
-    setColumnMapping((prev) => ({ ...prev, [field]: value || undefined }));
+    setColumnMapping((prev) => ({ ...prev, [field]: value === "__none__" ? undefined : value }));
   };
 
   const validateMapping = () => {
@@ -623,7 +623,7 @@ export default function UploadPage() {
                               <SelectValue placeholder="Select column (optional)" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">None</SelectItem>
+                              <SelectItem value="__none__">None</SelectItem>
                               {parsedData.headers.map((header) => (
                                 <SelectItem key={header} value={header}>
                                   {header}
