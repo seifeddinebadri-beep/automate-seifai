@@ -12,8 +12,8 @@ serve(async (req) => {
   }
 
   try {
-    const { datasetId, sourceFileName } = await req.json();
-    console.log("Starting analysis for dataset:", datasetId, "source:", sourceFileName);
+    const { datasetId, sourceFileName, processContext } = await req.json();
+    console.log("Starting analysis for dataset:", datasetId, "source:", sourceFileName, "context:", processContext ? "provided" : "none");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -93,14 +93,16 @@ serve(async (req) => {
     const useCases: any[] = [];
     const costPerHour = 50;
 
+    const contextPrefix = processContext?.processName ? `[${processContext.processName}] ` : "";
+
     metrics.forEach((m) => {
       // Pattern 1: High frequency + low variance (RPA candidate)
       if (m.frequency > 100 && m.std_deviation !== null && m.std_deviation < 30) {
         const hoursSaved = ((m.avg_duration || 60) * m.frequency) / 3600;
         useCases.push({
           dataset_id: datasetId,
-          name: `Automate "${m.activity}"`,
-          description: `High-frequency activity with consistent execution time, ideal for RPA.`,
+          name: `${contextPrefix}Automate "${m.activity}"`,
+          description: `High-frequency activity with consistent execution time, ideal for RPA.${processContext?.businessObjective ? ` Business objective: ${processContext.businessObjective}` : ""}`,
           type: "RPA",
           affected_activities: [m.activity],
           pattern_type: "high_frequency_low_variance",
@@ -119,8 +121,8 @@ serve(async (req) => {
         const hoursSaved = (m.rework_count * (m.avg_duration || 120)) / 3600;
         useCases.push({
           dataset_id: datasetId,
-          name: `Reduce rework in "${m.activity}"`,
-          description: `Frequent rework indicates validation or error correction opportunities.`,
+          name: `${contextPrefix}Reduce rework in "${m.activity}"`,
+          description: `Frequent rework indicates validation or error correction opportunities.${processContext?.knownPainPoints ? ` Known pain points: ${processContext.knownPainPoints}` : ""}`,
           type: "Rule",
           affected_activities: [m.activity],
           pattern_type: "rework_loop",
@@ -156,7 +158,7 @@ serve(async (req) => {
       
       // Trigger AI classification
       try {
-        await supabase.functions.invoke("classify-activities", { body: { datasetId } });
+        await supabase.functions.invoke("classify-activities", { body: { datasetId, processContext } });
       } catch (e) {
         console.log("AI classification will run separately");
       }

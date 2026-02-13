@@ -34,6 +34,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { AnalysisResultsDialog } from "@/components/upload/AnalysisResultsDialog";
+import { CSVContextWizard, type ProcessContext } from "@/components/upload/CSVContextWizard";
 
 interface ParsedData {
   headers: string[];
@@ -74,7 +75,9 @@ export default function UploadPage() {
     timestamp: "",
   });
   const [isProcessing, setIsProcessing] = useState(false);
-  const [step, setStep] = useState<"upload" | "map" | "confirm">("upload");
+  const [step, setStep] = useState<"upload" | "context" | "map" | "confirm">("upload");
+  const [showContextWizard, setShowContextWizard] = useState(false);
+  const [processContext, setProcessContext] = useState<ProcessContext | null>(null);
 
   // Document state
   const [docFile, setDocFile] = useState<File | null>(null);
@@ -141,7 +144,8 @@ export default function UploadPage() {
           });
 
           setColumnMapping(autoMapping);
-          setStep("map");
+          setStep("context");
+          setShowContextWizard(true);
         };
         reader.readAsText(selectedFile);
       }
@@ -227,8 +231,16 @@ export default function UploadPage() {
       toast.success(`Successfully imported ${events.length} events`);
       toast.info("Starting process analysis...");
       
+      // Save process context to dataset if provided
+      if (processContext) {
+        await supabase
+          .from("datasets")
+          .update({ process_context: processContext as any })
+          .eq("id", dataset.id);
+      }
+
       const response = await supabase.functions.invoke("analyze-process", {
-        body: { datasetId: dataset.id, sourceFileName: file.name },
+        body: { datasetId: dataset.id, sourceFileName: file.name, processContext },
       });
 
       if (response.error) {
@@ -464,8 +476,8 @@ export default function UploadPage() {
           <TabsContent value="csv" className="space-y-6 mt-6">
             {/* Progress Steps */}
             <div className="flex items-center justify-center gap-4">
-              {["Upload", "Map Columns", "Confirm"].map((label, idx) => {
-                const stepMap = ["upload", "map", "confirm"];
+              {["Upload", "Context", "Map Columns", "Confirm"].map((label, idx) => {
+                const stepMap = ["upload", "context", "map", "confirm"];
                 const currentIdx = stepMap.indexOf(step);
                 const isActive = idx === currentIdx;
                 const isComplete = idx < currentIdx;
@@ -490,13 +502,28 @@ export default function UploadPage() {
                     >
                       {label}
                     </span>
-                    {idx < 2 && (
+                    {idx < 3 && (
                       <div className="ml-2 h-px w-12 bg-border" />
                     )}
                   </div>
                 );
               })}
             </div>
+
+            {/* Context Wizard Dialog */}
+            <CSVContextWizard
+              open={showContextWizard}
+              onComplete={(ctx) => {
+                setProcessContext(ctx);
+                setShowContextWizard(false);
+                setStep("map");
+              }}
+              onSkip={() => {
+                setProcessContext(null);
+                setShowContextWizard(false);
+                setStep("map");
+              }}
+            />
 
             {/* Step 1: Upload */}
             {step === "upload" && (
@@ -616,7 +643,7 @@ export default function UploadPage() {
                     )}
 
                     <div className="flex gap-3">
-                      <Button variant="outline" onClick={() => setStep("upload")}>
+                      <Button variant="outline" onClick={() => { setStep("context"); setShowContextWizard(true); }}>
                         Back
                       </Button>
                       <Button
@@ -681,6 +708,19 @@ export default function UploadPage() {
                       </div>
                     </div>
                   </div>
+
+                  {processContext && (
+                    <div className="rounded-lg bg-muted/50 p-4">
+                      <h4 className="mb-2 font-medium">Business Context</h4>
+                      <div className="space-y-1 text-sm">
+                        <p><span className="font-medium">Process:</span> {processContext.processName}</p>
+                        {processContext.businessUnit && <p><span className="font-medium">Department:</span> {processContext.businessUnit}</p>}
+                        {processContext.processFrequency && <p><span className="font-medium">Frequency:</span> {processContext.processFrequency}</p>}
+                        {processContext.processCriticality && <p><span className="font-medium">Criticality:</span> {processContext.processCriticality}</p>}
+                        {processContext.tools.length > 0 && <p><span className="font-medium">Tools:</span> {processContext.tools.map(t => t.name).join(", ")}</p>}
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <h4 className="mb-2 font-medium">Column Mappings</h4>

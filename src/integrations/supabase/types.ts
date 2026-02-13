@@ -157,6 +157,7 @@ export type Database = {
           file_name: string
           id: string
           name: string
+          process_context: Json | null
           row_count: number | null
           status: string | null
           updated_at: string
@@ -167,6 +168,7 @@ export type Database = {
           file_name: string
           id?: string
           name: string
+          process_context?: Json | null
           row_count?: number | null
           status?: string | null
           updated_at?: string
@@ -177,6 +179,7 @@ export type Database = {
           file_name?: string
           id?: string
           name?: string
+          process_context?: Json | null
           row_count?: number | null
           status?: string | null
           updated_at?: string

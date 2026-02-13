@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { datasetId } = await req.json();
+    const { datasetId, processContext } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
@@ -36,13 +36,29 @@ serve(async (req) => {
     console.log(`Classifying ${useCases.length} use cases`);
 
     for (const uc of useCases) {
+      let contextBlock = "";
+      if (processContext) {
+        const parts: string[] = [];
+        if (processContext.processName) parts.push(`Process: ${processContext.processName}`);
+        if (processContext.businessUnit) parts.push(`Department: ${processContext.businessUnit}`);
+        if (processContext.businessObjective) parts.push(`Objective: ${processContext.businessObjective}`);
+        if (processContext.processFrequency) parts.push(`Frequency: ${processContext.processFrequency}`);
+        if (processContext.processCriticality) parts.push(`Criticality: ${processContext.processCriticality}`);
+        if (processContext.tools?.length > 0) {
+          parts.push(`Tools: ${processContext.tools.map((t: any) => `${t.name} (${t.purpose})`).join(", ")}`);
+        }
+        if (processContext.additionalDetails) parts.push(`Additional context: ${processContext.additionalDetails}`);
+        if (processContext.knownPainPoints) parts.push(`Pain points: ${processContext.knownPainPoints}`);
+        contextBlock = `\n\nBusiness Context:\n${parts.join("\n")}`;
+      }
+
       const prompt = `Analyze this automation opportunity and provide classification and explanation:
 
 Activity: ${uc.affected_activities.join(", ")}
 Pattern: ${uc.pattern_type}
 Monthly Volume: ${uc.monthly_volume}
 Suggested Type: ${uc.type}
-Complexity: ${uc.complexity}
+Complexity: ${uc.complexity}${contextBlock}
 
 Respond in JSON format:
 {
